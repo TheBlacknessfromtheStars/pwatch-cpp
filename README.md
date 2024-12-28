@@ -1,2 +1,2 @@
 # pwatch-cpp
-参考~~（完全照抄）~~[pwatch-c](https://github.com/enenH/pwatch-c)项目，作为自己学习使用
+参考~~复制~~ [pwatch-c](https://github.com/enenH/pwatch-c)项目，仅作学习使用
