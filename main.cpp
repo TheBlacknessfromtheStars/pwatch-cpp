@@ -1,6 +1,6 @@
-#include "PerfMap.hpp"
 #include <cstdio>
-#include <vector>
+
+#include "PerfMap.hpp"
 
 using namespace std;
 
@@ -16,17 +16,12 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    vector<int> pids = Pwatch::getProcessTasks(atoi(argv[1]));
-
-    for (int pid : pids)
-        printf("%d ", pid);
-    printf("\n");
-
     Pwatch::PerfMap map;
-    map.create(pids, strtoul(argv[2], NULL, 16), HW_BREAKPOINT_LEN_4,
-               HW_BREAKPOINT_W, 1);
-    map.enable();
-    map.process(handle, nullptr);
+
+    map.create(atoi(argv[1]), strtoul(argv[2], NULL, 16), Pwatch::LEN_4,
+               Pwatch::W, 1);
+    map.setHandle(handle);
+    map.process(nullptr);
     map.disable();
     map.destroy();
 
