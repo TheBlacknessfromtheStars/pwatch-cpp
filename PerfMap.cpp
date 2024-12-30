@@ -137,6 +137,7 @@ int PerfMap::process(bool* loop) {
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, it->second.fd, &event[i]);
         ++it;
     }
+
     enable();
     while (loop == nullptr || *loop) {
         if (epoll_wait(epoll_fd, event, maxevents, -1) <= 0) continue;
