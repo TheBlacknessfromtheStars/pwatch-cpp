@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdio>
 
 #include "PerfMap.hpp"
@@ -16,11 +17,23 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    Pwatch::PerfMap map;
+    Pwatch::PerfMap map(atoi(argv[1]));
 
-    map.create(atoi(argv[1]), strtoul(argv[2], NULL, 16), Pwatch::LEN_4,
-               Pwatch::W, 1);
-    map.setHandle(handle);
+    map.create(strtoul(argv[2], NULL, 16), Pwatch::LEN_4, Pwatch::W);
+    map.setHandle([](Pwatch::SampleData* data) {
+        int i = 0;
+        for (uint64_t reg : data->regs) {
+            if (i < 31)
+                printf("x%d: 0x%lx ", i, reg);
+            else if (i > 31)
+                printf("pc: 0x%lx ", reg);
+            else {
+                printf("sp: 0x%lx ", reg);
+            }
+            ++i;
+        }
+        printf("\n");
+    });
     map.process(nullptr);
     map.disable();
     map.destroy();

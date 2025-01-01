@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 
 namespace Pwatch {
 inline static int perf_event_open(perf_event_attr* attr, int pid, int cpu,
@@ -46,7 +47,7 @@ std::vector<int> getProcessTasks(int pid) {
     return result;
 }
 
-PerfMap::PerfMap() {
+PerfMap::PerfMap(int pid) {
     attr.size = sizeof(perf_event_attr);
     attr.type = PERF_TYPE_BREAKPOINT;
     attr.config = PERF_COUNT_SW_CPU_CLOCK;
@@ -64,9 +65,14 @@ PerfMap::PerfMap() {
     attr.comm = 1;
     attr.mmap_data = 1;
     attr.mmap2 = 1;
+
+    handle = [](SampleData*) {};
+    this->pid = pid;
 }
 
-int PerfMap::addThread(int tid, int data_page_size_exponent) {
+void PerfMap::setDataPageSizeExp(uint32_t n) { data_page_size_exponent = n; }
+
+int PerfMap::addThread(int tid) {
     PerfInfo info{};
 
     info.fd = perf_event_open(&attr, tid, -1, -1, PERF_FLAG_FD_CLOEXEC);
@@ -94,14 +100,12 @@ int PerfMap::addThread(int tid, int data_page_size_exponent) {
     return 0;
 }
 
-int PerfMap::create(int pid, uintptr_t bp_addr, int bp_len, int bp_type,
-                    int n) {
+int PerfMap::create(uintptr_t bp_addr, int bp_len, int bp_type) {
     std::vector<int> tasks = getProcessTasks(pid);
 
-    this->pid = pid;
     setBreakpoint(bp_type, bp_addr, bp_len);
     for (int tid : tasks) {
-        addThread(tid, n);
+        addThread(tid);
     }
     if (perf_infos.empty()) return -1;
 
@@ -115,6 +119,9 @@ void PerfMap::setBreakpoint(int bp_type, uintptr_t bp_addr, int bp_len) {
 }
 
 void PerfMap::setHandle(void (*callback)(SampleData*)) { handle = callback; }
+void PerfMap::setHandle(std::function<void(SampleData*)>& handle) {
+    this->handle = handle;
+}
 
 int PerfMap::process(bool* loop) {
     if (perf_infos.empty()) {
@@ -145,30 +152,36 @@ int PerfMap::process(bool* loop) {
         it = perf_infos.begin();
         for (int i = 0; i < maxevents; i++) {
             if (event[i].events & EPOLLIN) {
-                uint64_t offset = 0;
+                uint64_t offset;
                 PerfInfo& info = it->second;
                 auto get_addr = [&]() {
                     return (void*)((uintptr_t)info.data_page +
                                    ((info.read_data_size + offset) %
                                     info.sample_metadata_page->data_size));
                 };
-                SampleData data{};
-                perf_event_header* header = (perf_event_header*)get_addr();
+                while (info.read_data_size <
+                       info.sample_metadata_page->data_head) {
+                    offset = 0;
+                    SampleData data{};
+                    perf_event_header* header = (perf_event_header*)get_addr();
 
-                if (header->type == PERF_RECORD_SAMPLE) {
-                    offset += sizeof(perf_event_header);
-                    data.pid = *((uint32_t*)get_addr());
-                    offset += 4;
-                    data.tid = *((uint32_t*)get_addr());
-                    offset += 4;
-                    data.abi = *((uint64_t*)get_addr());
-                    offset += 8;
-                    memcpy(&data.regs, get_addr(), sizeof(data.regs));
-                    offset += sizeof(data.regs);
-                    info.read_data_size += offset;
-                    handle(&data);
+                    if (header->type == PERF_RECORD_SAMPLE) {
+                        offset += sizeof(perf_event_header);
+                        data.pid = *((uint32_t*)get_addr());
+                        offset += sizeof(uint32_t);
+                        data.tid = *((uint32_t*)get_addr());
+                        offset += sizeof(uint32_t);
+                        data.abi = *((uint64_t*)get_addr());
+                        offset += sizeof(uint64_t);
+                        for (uint64_t& reg : data.regs) {
+                            reg = *(uint64_t*)get_addr();
+                            offset += sizeof(uint64_t);
+                        }
+                        info.read_data_size += offset;
+                        handle(&data);
+                    }
+                    info.sample_metadata_page->data_tail = info.read_data_size;
                 }
-                info.sample_metadata_page->data_tail = info.read_data_size;
             }
             ++it;
         }

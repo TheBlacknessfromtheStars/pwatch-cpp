@@ -39,17 +39,20 @@ struct SampleData {
 class PerfMap {
    private:
     int pid;
+    uint32_t data_page_size_exponent = 2;
     perf_event_attr attr{};
     std::map<int, PerfInfo> perf_infos;
     std::function<void(SampleData*)> handle;
 
-    int addThread(int tid, int data_page_size_exponent);
+    int addThread(int tid);
 
    public:
-    PerfMap();
-    int create(int pid, uintptr_t bp_addr, int bp_len, int bp_type, int n);
+    PerfMap(int pid);
+    int create(uintptr_t bp_addr, int bp_len, int bp_type);
     void setBreakpoint(int bp_type, uintptr_t bp_addr, int bp_len);
+    void setDataPageSizeExp(uint32_t n);
     void setHandle(void (*callback)(SampleData*));
+    void setHandle(std::function<void(SampleData*)>& handle);
     void enable();
     void disable();
     void destroy();
